@@ -94,6 +94,11 @@ Status RunAllToAll(bool has_split_dimension,
   int num_participants;
   XLA_CUDA_RETURN_IF_ERROR(ncclCommCount(comm, &num_participants));
 
+  // ----------------------------------------------------------------------------------------------------
+  int repeat_comm = 1;
+  if (const char* env = std::getenv("ALPA_TEST_REPEAT_COMM"))
+    repeat_comm = std::stoi(env);
+  // ----------------------------------------------------------------------------------------------------
   XLA_CUDA_RETURN_IF_ERROR(ncclGroupStart());
   // AllToAll can operate in two modes. Either it specifies a split dimension,
   // in which case inputs are split and outputs concatenated in that dimension
@@ -121,12 +126,14 @@ Status RunAllToAll(bool has_split_dimension,
                                                 buffer.element_type);
 
       for (int rank = 0; rank < num_participants; ++rank) {
+        for (int _repeat=0; _repeat<repeat_comm; _repeat++) {
         XLA_CUDA_RETURN_IF_ERROR(ncclSend(send_buffer + rank * chunk_bytes,
                                           chunk_elements, dtype, rank, comm,
                                           gpu_stream));
         XLA_CUDA_RETURN_IF_ERROR(ncclRecv(recv_buffer + rank * chunk_bytes,
                                           chunk_elements, dtype, rank, comm,
                                           gpu_stream));
+        }
       }
     }
   } else {
@@ -146,10 +153,12 @@ Status RunAllToAll(bool has_split_dimension,
       ncclDataType_t dtype = dtype_and_multiplier.first;
       int64_t element_count = buffer.element_count * dtype_and_multiplier.second;
 
+      for (int _repeat=0; _repeat<repeat_comm; _repeat++) {
       XLA_CUDA_RETURN_IF_ERROR(ncclSend(send_buffer, element_count, dtype,
                                         /*rank=*/i, comm, gpu_stream));
       XLA_CUDA_RETURN_IF_ERROR(ncclRecv(recv_buffer, element_count, dtype,
                                         /*rank=*/i, comm, gpu_stream));
+      }
     }
   }
   XLA_CUDA_RETURN_IF_ERROR(ncclGroupEnd());

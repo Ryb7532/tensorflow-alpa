@@ -21,6 +21,8 @@ limitations under the License.
 #include "tensorflow/compiler/xla/stream_executor/gpu/gpu_stream.h"
 #include "third_party/gpus/cuda/include/cuda.h"
 #endif
+#include <cstdlib>
+#include <string>
 
 namespace stream_executor {};
 namespace se = ::stream_executor;
@@ -174,6 +176,11 @@ Status CommGroup::NcclLocalAllGatherImpl(
       ncclDataType_t dtype,
       ToNcclDataType(buffers[0]->on_device_shape().element_type()));
   int dtype_size = SizeOfType(dtype);
+  // ----------------------------------------------------------------------------------------------------
+  int repeat_comm = 1;
+  if (const char* env = std::getenv("ALPA_TEST_REPEAT_COMM"))
+    repeat_comm = std::stoi(env);
+  // ----------------------------------------------------------------------------------------------------
   XLA_CUDA_RETURN_IF_ERROR(ncclGroupStart());
   for (int i = 0; i < n_devices; ++i) {
     // FIXME(yonghao): use assign or return
@@ -184,6 +191,7 @@ Status CommGroup::NcclLocalAllGatherImpl(
     auto comm = *comm_map[std::make_pair(key, device_ids[i])].Acquire();
     auto stream = (use_default_stream ? default_stream
                                       : GetCudaStream(recv_streams[i].get()));
+    for (int _repeat=0; _repeat<repeat_comm; _repeat++)
     XLA_CUDA_RETURN_IF_ERROR(ncclAllGather((void *)sendbuff, (void *)recvbuff,
                                            n_elements, dtype, comm, stream));
   }
@@ -209,6 +217,11 @@ Status CommGroup::NcclBroadcastPartialGPUsImpl(
       ToNcclDataType(buffers[0]->on_device_shape().element_type()));
   int dtype_size = SizeOfType(dtype);
 
+  // ----------------------------------------------------------------------------------------------------
+  int repeat_comm = 1;
+  if (const char* env = std::getenv("ALPA_TEST_REPEAT_COMM"))
+    repeat_comm = std::stoi(env);
+  // ----------------------------------------------------------------------------------------------------
   XLA_CUDA_RETURN_IF_ERROR(ncclGroupStart());
   for (int i = 0; i < n_devices; ++i) {
     int device_id = device_ids[i];
@@ -224,6 +237,7 @@ Status CommGroup::NcclBroadcastPartialGPUsImpl(
                                            : send_streams[device_id].get();
     auto stream =
         use_default_stream ? default_stream : GetCudaStream(se_stream);
+    for (int _repeat=0; _repeat<repeat_comm; _repeat++)
     XLA_CUDA_RETURN_IF_ERROR(ncclBroadcast((void *)sendbuff, (void *)recvbuff,
                                            n_elements, dtype, root_rank, comm,
                                            stream));
@@ -249,6 +263,12 @@ Status CommGroup::NcclSendImpl(const AlpaNcclUid &key, PjRtBuffer *buffer,
   auto stream = use_default_stream
                     ? default_stream
                     : GetCudaStream(send_streams[device_id].get());
+  // ----------------------------------------------------------------------------------------------------
+  int repeat_comm = 1;
+  if (const char* env = std::getenv("ALPA_TEST_REPEAT_COMM"))
+    repeat_comm = std::stoi(env);
+  // ----------------------------------------------------------------------------------------------------
+  for (int _repeat=0; _repeat<repeat_comm; _repeat++)
   XLA_CUDA_RETURN_IF_ERROR(ncclSend((void *)sendbuff, n_elements, dtype,
                                     peer_p2p_rank, comm, stream));
   // cudaDeviceSynchronize();
@@ -272,6 +292,12 @@ Status CommGroup::NcclRecvImpl(const AlpaNcclUid &key, PjRtBuffer *buffer,
   auto stream = use_default_stream
                     ? default_stream
                     : GetCudaStream(recv_streams[device_id].get());
+  // ----------------------------------------------------------------------------------------------------
+  int repeat_comm = 1;
+  if (const char* env = std::getenv("ALPA_TEST_REPEAT_COMM"))
+    repeat_comm = std::stoi(env);
+  // ----------------------------------------------------------------------------------------------------
+  for (int _repeat=0; _repeat<repeat_comm; _repeat++)
   XLA_CUDA_RETURN_IF_ERROR(ncclRecv((void *)recvbuff, n_elements, dtype,
                                     peer_p2p_rank, comm, stream));
   // cudaDeviceSynchronize();

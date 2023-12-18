@@ -100,6 +100,11 @@ Status RunAllReduce(const NcclAllReduceConfig& config,
     return OkStatus();
   }
 
+  // ----------------------------------------------------------------------------------------------------
+  int repeat_comm = 1;
+  if (const char* env = std::getenv("ALPA_TEST_REPEAT_COMM"))
+    repeat_comm = std::stoi(env);
+  // ----------------------------------------------------------------------------------------------------
   XLA_CUDA_RETURN_IF_ERROR(ncclGroupStart());
   for (size_t i = 0; i < buffers.size(); ++i) {
     DeviceBufferPair& buffer = buffers[i];
@@ -117,6 +122,7 @@ Status RunAllReduce(const NcclAllReduceConfig& config,
         send_buffer, recv_buffer, element_count, static_cast<const void*>(comm),
         gpu_stream);
 
+    for (int _repeat=0; _repeat<repeat_comm; _repeat++)
     XLA_CUDA_RETURN_IF_ERROR(ncclAllReduce(send_buffer, recv_buffer,
                                            element_count, dtype, reduce_op,
                                            comm, gpu_stream));
@@ -431,6 +437,11 @@ Status RunReduceScatter(ReductionKind reduction_kind,
   int num_participants = 0;
   XLA_CUDA_RETURN_IF_ERROR(ncclCommCount(comm, &num_participants));
 
+  // ----------------------------------------------------------------------------------------------------
+  int repeat_comm = 1;
+  if (const char* env = std::getenv("ALPA_TEST_REPEAT_COMM"))
+    repeat_comm = std::stoi(env);
+  // ----------------------------------------------------------------------------------------------------
   XLA_CUDA_RETURN_IF_ERROR(ncclGroupStart());
   for (size_t i = 0; i < buffers.size(); ++i) {
     DeviceBufferPair& buffer = buffers[i];
@@ -455,6 +466,7 @@ Status RunReduceScatter(ReductionKind reduction_kind,
         "comm=%p, stream=%p)",
         send_buffer, recv_buffer, recv_count, static_cast<const void*>(comm),
         gpu_stream);
+    for (int _repeat=0; _repeat<repeat_comm; _repeat++)
     XLA_CUDA_RETURN_IF_ERROR(ncclReduceScatter(send_buffer, recv_buffer,
                                                recv_count, dtype, reduce_op,
                                                comm, gpu_stream));

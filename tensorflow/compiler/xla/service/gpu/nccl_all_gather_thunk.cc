@@ -70,6 +70,11 @@ Status RunAllGather(std::vector<DeviceBufferPair>& buffers, se::Stream& stream,
 
   se::gpu::GpuStreamHandle gpu_stream = se::gpu::AsGpuStreamValue(&stream);
 
+  // ----------------------------------------------------------------------------------------------------
+  int repeat_comm = 1;
+  if (const char* env = std::getenv("ALPA_TEST_REPEAT_COMM"))
+    repeat_comm = std::stoi(env);
+  // ----------------------------------------------------------------------------------------------------
   XLA_CUDA_RETURN_IF_ERROR(ncclGroupStart());
   for (size_t i = 0; i < buffers.size(); ++i) {
     DeviceBufferPair& buffer = buffers[i];
@@ -88,6 +93,7 @@ Status RunAllGather(std::vector<DeviceBufferPair>& buffers, se::Stream& stream,
         send_buffer, recv_buffer, element_count, static_cast<const void*>(comm),
         gpu_stream);
 
+    for (int _repeat=0; _repeat<repeat_comm; _repeat++)
     XLA_CUDA_RETURN_IF_ERROR(ncclAllGather(
         send_buffer, recv_buffer, element_count, dtype, comm, gpu_stream));
   }

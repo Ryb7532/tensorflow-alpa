@@ -20,6 +20,7 @@ limitations under the License.
 #include <string>
 #include <utility>
 #include <vector>
+#include <cstdlib>
 
 #include "absl/algorithm/container.h"
 #include "absl/base/call_once.h"
@@ -181,6 +182,11 @@ Status RunCollectivePermute(
                                 device_string, current_id,
                                 source_id.value_or(-1), target_id.value_or(-1));
 
+  // ----------------------------------------------------------------------------------------------------
+  int repeat_comm = 1;
+  if (const char* env = std::getenv("ALPA_TEST_REPEAT_COMM"))
+    repeat_comm = std::stoi(env);
+  // ----------------------------------------------------------------------------------------------------
   XLA_CUDA_RETURN_IF_ERROR(ncclGroupStart());
 
   TF_ASSIGN_OR_RETURN(auto dtype_and_multiplier,
@@ -197,6 +203,7 @@ Status RunCollectivePermute(
         "comm=%p, stream=%p)",
         device_string, src_addr.opaque(), element_count, *target_id,
         static_cast<const void*>(comm), gpu_stream);
+    for (int _repeat=0; _repeat<repeat_comm; _repeat++)
     XLA_CUDA_RETURN_IF_ERROR(ncclSend(src_addr.opaque(), element_count, dtype,
                                       *target_id, comm, gpu_stream));
   }
@@ -208,6 +215,7 @@ Status RunCollectivePermute(
         "stream=%p)",
         device_string, dest_addr.opaque(), element_count, *source_id,
         static_cast<const void*>(comm), gpu_stream);
+    for (int _repeat=0; _repeat<repeat_comm; _repeat++)
     XLA_CUDA_RETURN_IF_ERROR(ncclRecv(dest_addr.opaque(), element_count, dtype,
                                       *source_id, comm, gpu_stream));
   }
