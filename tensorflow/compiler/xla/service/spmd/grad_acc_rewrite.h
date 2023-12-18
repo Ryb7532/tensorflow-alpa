@@ -37,6 +37,19 @@ std::string GetGradSyncChannelIds(const HloModule* module);
 
 const char* const kSkippableAllReduce = "grad_acc_skippable_all_reduce";
 
+/***** Added by Ryb7532 *****/
+class GradAccCommDelay : public HloModulePass {
+ public:
+  GradAccCommDelay() = default;
+  ~GradAccCommDelay() override = default;
+  absl::string_view name() const override { return "grad_acc_comm_delay"; }
+
+  StatusOr<bool> Run(
+      HloModule* backward_hlo, HloModule* applygrad_hlo) override;
+};
+
+const char* const kAllReduceToBeRemoved = "all_reduce_to_be_removed";
+
 }  // namespace spmd
 }  // namespace xla
 

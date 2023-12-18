@@ -888,5 +888,16 @@ void BuildXlaCompilerSubmodule(py::module& m) {
       });
   /***** Alpa Functions End *****/
 
+  /***** Added by RHosoki *****/
+  m.def(
+      "run_comm_delay_spmd_partitioner",
+      [](vector<HloModule*> hlo_modules, const CompileOptions& options) {
+        py::gil_scoped_release gil_release;
+        TF_RETURN_IF_ERROR(spmd::RunCommDelaySpmdPartitionerPass(hlo_modules, options));
+        return Status::OK();
+      },
+      py::arg("hlo_modules"), py::arg("compile_options") = CompileOptions());
+
+
 }  // NOLINT(readability/fn_size)
 }  // namespace xla

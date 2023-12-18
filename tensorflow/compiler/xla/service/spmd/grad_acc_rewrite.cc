@@ -156,5 +156,109 @@ std::string GetGradSyncChannelIds(const HloModule* module) {
   return ret;
 }
 
+/***** Added by Ryb7532 *****/
+StatusOr<bool> GradAccCommDelay::Run(HloModule* backward_hlo, HloModule* applygrad_hlo) {
+  if (!pass_context::GetBool("auto_sharding::rewrite_for_grad_acc", false)) {
+    return false;
+  }
+
+  auto output_indices = pass_context::GetIntVector("auto_sharding::rewrite_indices");
+  auto input_indices = pass_context::GetIntVector("auto_sharding::rewrite_applygrad_indices");
+
+  HloComputation* backward_entry = backward_hlo->entry_computation();
+  HloInstruction* output_tuple = backward_entry->root_instruction();
+  HloComputation* applygrad_entry = applygrad_hlo->entry_computation();
+
+  std::vector<HloInstruction*> to_remove_backward, to_remove_applygrad;
+
+  for (size_t j = 0; j<indices.size(); j++) {
+    int64_t out_index = output_indices[j], in_index = input_indices[j];
+    HloInstruction* add_ins = output_tuple->mutable_operand(out_index);
+    if (add_ins->opcode() != HloOpcode::kAdd) {
+      continue;
+    }
+
+    HloInstruction* allreduce_ins = GetAllReduce(add_ins->mutable_operand(1));
+
+    if (allreduce_ins == nullptr || allreduce_ins->users().size() != 1) {
+      continue;
+    }
+
+    CHECK_EQ(allreduce_ins->operand_count(), 1);
+
+    HloInstruction* allreduce_user = allreduce_ins->users().front();
+    HloInstruction* param_ins = applygrad_entry->parameter_instruction(in_index);
+
+    // detach allreduce_ins
+    for (size_t i = 0; i < allreduce_user->operand_count(); ++i) {
+      if (allreduce_user->operand(i) == allreduce_ins) {
+        allreduce_user->ReplaceOperandWith(
+            i, MaybeReshapeConvert(allreduce_ins->mutable_operand(0),
+                                   allreduce_user->operand(i)->shape()));
+      }
+    }
+
+    // TODO: remove these lines (left for debug)
+    // allreduce_ins->ReplaceOperandWith(0, add_ins);
+    allreduce_ins->ReplaceOperandWith(
+        0, MaybeReshapeConvert(add_ins, allreduce_ins->shape()));
+    // output_tuple->ReplaceOperandWith(
+    //     out_index, MaybeReshapeConvert(allreduce_ins, add_ins->shape()));
+    allreduce_ins->set_metadata_op_name(kAllReduceToBeRemoved);
+
+    {
+      CHECK_EQ(ShapeUtil::SameElementType(add_ins->shape(), param_ins->shape()));
+      auto old_allreduce = Cast<HloAllReduceInstruction>(allreduce_ins);
+      const Shape& new_shape = old_allreduce->shape();
+      HloInstruction::InstructionVector new_operands;
+      new_operands.push_back(param_ins);
+      auto new_allreduce =
+          applygrad_entry->AddInstruction(HloInstruction::CreateAllReduce(
+              new_shape,
+              MaybeReshapeConvertTuple(new_operands, new_shape),
+              MakeBinaryAdd(new_shape.element_type(), applygrad_entry->parent()),
+              old_allreduce->replica_groups(),
+              old_allreduce->constrain_layout(), old_allreduce->channel_id(),
+              old_allreduce->use_global_device_ids()));
+      new_allreduce->set_metadata(old_allreduce->metadata());
+      param_ins->ReplaceAllUsesWith(
+          MaybeReshapeConvert(new_allreduce, param_ins->shape()));
+
+      // TODO: uncomment out (left for debug)
+      // to_remove_backward.push_back(old_allreduce);
+      allreduce_ins = new_allreduce;
+    }
+
+    if (!ShapeUtil::SameElementType(allreduce_ins->shape(), param_ins->shape())) {
+      // Fix type mismatch
+      auto old_allreduce = Cast<HloAllReduceInstruction>(allreduce_ins);
+      const Shape& new_shape = param_ins->shape();
+      auto new_allreduce =
+          applygrad_entry->AddInstruction(HloInstruction::CreateAllReduce(
+              new_shape,
+              MaybeReshapeConvertTuple(old_allreduce->operands(), new_shape),
+              MakeBinaryAdd(new_shape.element_type(), entry->parent()),
+              old_allreduce->replica_groups(),
+              old_allreduce->constrain_layout(), old_allreduce->channel_id(),
+              old_allreduce->use_global_device_ids()));
+      new_allreduce->set_metadata(old_allreduce->metadata());
+      old_allreduce->ReplaceAllUsesWith(
+          MaybeReshapeConvert(new_allreduce, old_allreduce->shape()));
+      to_remove_applygrad.push_back(old_allreduce);
+    }
+  }
+
+  // TODO: uncomment out (left for debug)
+  // for (auto ins : to_remove_backward) {
+  //   backward_entry->RemoveInstruction(ins);
+  // }
+
+  for (auto ins : to_remove_applygrad) {
+    applygrad_entry->RemoveInstruction(ins);
+  }
+
+  return true;
+}
+
 }  // namespace spmd
 }  // namespace xla

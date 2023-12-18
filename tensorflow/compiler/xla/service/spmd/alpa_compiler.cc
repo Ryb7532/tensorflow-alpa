@@ -283,5 +283,49 @@ Status SetHloModuleInputShardings(HloModule* module,
   return OkStatus();
 }
 
+/***** Delay communication for acc grad from backward computation to apply_grad (Added by Ryb7532) *****/
+Status RunCommDelaySpmdPartitionerPass(vector<HloModule*> hlo_modules,
+                                       const CompileOptions& options) {
+  int num_modules = hlo_modules.size();
+
+  if (num_modules <= 0)
+    return OkStatus();
+
+  for (HloModule* hlo_module : hlo_modules) {
+    TF_ASSIGN_OR_RETURN(auto module_config,
+                        CreateHloModuleConfig(hlo_module, options));
+    hlo_module->set_config(module_config);
+
+    DumpHloModuleIfEnabled(*hlo_module, kBeforeSpmdPartitionDumpName);
+
+    // TODO(yonghao): TF Profiler Traceme
+    if (hlo_module->config().use_spmd_partitioning()) {
+      HloPassPipeline spmd_pipeline("run-spmd-partitioner");
+      const int64_t num_partitions = hlo_module->config().num_partitions();
+      if (num_partitions > 1) {
+        spmd_pipeline.AddPass<ShardingPropagation>(
+            /*is_spmd=*/true, /*propagate_metadata=*/false,
+            /*allow_spmd_sharding_propagation_to_output=*/true);
+        spmd_pipeline.AddPass<StatefulRngSpmdPartitioner>(
+            num_partitions, hlo_module->config().replica_count());
+        spmd_pipeline.AddPass<RedundantSliceEliminator>();
+        spmd_pipeline.AddPass<AllReduceReassociate>();
+      } else {
+        // Remove redundant sharding ops when partition_count == 1.
+        spmd_pipeline.AddPass<ShardingRemover>();
+        spmd_pipeline.AddPass<HloDCE>();
+      }
+      TF_RETURN_IF_ERROR(spmd_pipeline.Run(hlo_module).status());
+    }
+  }
+
+  TF_RETURN_IF_ERROR(num_modules == 2);
+
+  GradAccCommRewrite pass;
+  TF_RETURN_IF_ERROR(pass.Run(hlo_modules[0], hlo_modules[1]).status());
+
+  return OkStatus();
+}
+
 };  // namespace spmd
 };  // namespace xla
