@@ -45,7 +45,7 @@ class GradAccCommDelay : public HloModulePass {
   absl::string_view name() const override { return "grad_acc_comm_delay"; }
 
   StatusOr<bool> Run(
-      HloModule* backward_hlo, HloModule* applygrad_hlo) override;
+      HloModule* backward_hlo, HloModule* applygrad_hlo);
 };
 
 const char* const kAllReduceToBeRemoved = "all_reduce_to_be_removed";
