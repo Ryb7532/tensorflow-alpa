@@ -239,7 +239,7 @@ StatusOr<bool> GradAccCommDelay::Run(HloModule* backward_hlo, HloModule* applygr
 
       HloInstruction* param_ins = applygrad_entry->parameter_instruction(in_index);
 
-      CHECK_EQ(ShapeUtil::SameElementType(add_ins->shape(), param_ins->shape()));
+      TF_RETURN_IF_ERROR(ShapeUtil::SameElementType(add_ins->shape(), param_ins->shape()));
       auto old_allreduce = Cast<HloAllReduceInstruction>(allreduce_ins);
       const Shape& new_shape = old_allreduce->shape();
       HloInstruction::InstructionVector new_operands;
