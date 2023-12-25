@@ -284,7 +284,7 @@ Status SetHloModuleInputShardings(HloModule* module,
 }
 
 /***** Delay communication for acc grad from backward computation to apply_grad (Added by Ryb7532) *****/
-Status RunCommDelaySpmdPartitionerPass(vector<HloModule*> hlo_modules,
+Status RunCommDelaySpmdPartitionerPass(std::vector<HloModule*> hlo_modules,
                                        const CompileOptions& options) {
   int num_modules = hlo_modules.size();
 
