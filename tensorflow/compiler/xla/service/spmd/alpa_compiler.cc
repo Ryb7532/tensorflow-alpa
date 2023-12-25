@@ -319,9 +319,9 @@ Status RunCommDelaySpmdPartitionerPass(std::vector<HloModule*> hlo_modules,
     }
   }
 
-  TF_RETURN_IF_ERROR(num_modules == 2);
+  assert(num_modules == 2);
 
-  GradAccCommRewrite pass;
+  GradAccCommDelay pass;
   TF_RETURN_IF_ERROR(pass.Run(hlo_modules[0], hlo_modules[1]).status());
 
   return OkStatus();
