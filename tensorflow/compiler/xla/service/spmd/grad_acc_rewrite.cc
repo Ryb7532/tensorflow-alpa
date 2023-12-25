@@ -268,7 +268,7 @@ StatusOr<bool> GradAccCommDelay::Run(HloModule* backward_hlo, HloModule* applygr
             applygrad_entry->AddInstruction(HloInstruction::CreateAllReduce(
                 new_shape,
                 MaybeReshapeConvertTuple(old_allreduce->operands(), new_shape),
-                MakeBinaryAdd(new_shape.element_type(), entry->parent()),
+                MakeBinaryAdd(new_shape.element_type(), applygrad_entry->parent()),
                 old_allreduce->replica_groups(),
                 old_allreduce->constrain_layout(), old_allreduce->channel_id(),
                 old_allreduce->use_global_device_ids()));
