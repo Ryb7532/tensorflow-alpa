@@ -164,7 +164,10 @@ StatusOr<bool> GradAccCommDelay::Run(HloModule* backward_hlo, HloModule* applygr
 
   // for debug
   std::cerr << "===== Enter GradAccRewrite =====" << std::endl;
-  std::cerr << module->ToString();
+  std::cerr << "Backward:" << std::endl;
+  std::cerr << backward_hlo->ToString();
+  std::cerr << "Apply_grad:" << std::endl;
+  std::cerr << applygrad_hlo->ToString();
   std::cerr << "=====================================" << std::endl;
 
   auto output_indices = pass_context::GetIntVector("auto_sharding::rewrite_indices");
@@ -176,7 +179,9 @@ StatusOr<bool> GradAccCommDelay::Run(HloModule* backward_hlo, HloModule* applygr
 
   std::vector<HloInstruction*> to_remove_in_backward, to_remove_in_applygrad;
 
-  for (size_t j = 0; j<indices.size(); j++) {
+  CHECK_EQ(output_indices.size(), input_indices.size());
+
+  for (size_t j = 0; j<output_indices.size(); j++) {
     int64_t out_index = output_indices[j], in_index = input_indices[j];
     HloInstruction* add_ins = output_tuple->mutable_operand(out_index);
     if (add_ins->opcode() != HloOpcode::kAdd) {
@@ -239,7 +244,7 @@ StatusOr<bool> GradAccCommDelay::Run(HloModule* backward_hlo, HloModule* applygr
 
       HloInstruction* param_ins = applygrad_entry->parameter_instruction(in_index);
 
-      TF_RETURN_IF_ERROR(ShapeUtil::SameElementType(add_ins->shape(), param_ins->shape()));
+      assert(ShapeUtil::SameElementType(add_ins->shape(), param_ins->shape()));
       auto old_allreduce = Cast<HloAllReduceInstruction>(allreduce_ins);
       const Shape& new_shape = old_allreduce->shape();
       HloInstruction::InstructionVector new_operands;
@@ -290,7 +295,10 @@ StatusOr<bool> GradAccCommDelay::Run(HloModule* backward_hlo, HloModule* applygr
 
   // for debug
   std::cerr << "===== Exit GradAccRewrite =====" << std::endl;
-  std::cerr << module->ToString();
+  std::cerr << "Backward:" << std::endl;
+  std::cerr << backward_hlo->ToString();
+  std::cerr << "Apply_grad:" << std::endl;
+  std::cerr << applygrad_hlo->ToString();
   std::cerr << "=====================================" << std::endl;
 
   return true;
