@@ -164,7 +164,7 @@ StatusOr<bool> GradAccCommDelay::RunOnModuleGroup(
     return false;
   }
 
-  assert(module_group.size() == 2);
+  assert(module_group->size() == 2);
 
   HloModule* backward_hlo = module_group->modules()[0];
   HloModule* applygrad_hlo = module_group->modules()[1];
