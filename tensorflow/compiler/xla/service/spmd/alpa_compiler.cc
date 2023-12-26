@@ -286,10 +286,7 @@ Status SetHloModuleInputShardings(HloModule* module,
 /***** Delay communication for acc grad from backward computation to apply_grad (Added by Ryb7532) *****/
 Status RunCommDelaySpmdPartitionerPass(std::vector<HloModule*> hlo_modules,
                                        const CompileOptions& options) {
-  int num_modules = hlo_modules.size();
-
-  if (num_modules <= 0)
-    return OkStatus();
+  HloModuleGroup* module_group("");
 
   for (HloModule* hlo_module : hlo_modules) {
     TF_ASSIGN_OR_RETURN(auto module_config,
@@ -316,13 +313,17 @@ Status RunCommDelaySpmdPartitionerPass(std::vector<HloModule*> hlo_modules,
         spmd_pipeline.AddPass<HloDCE>();
       }
       TF_RETURN_IF_ERROR(spmd_pipeline.Run(hlo_module).status());
+      module_group.push_back(std::unique_ptr<HloModule>(hlo_module));
     }
   }
 
-  assert(num_modules == 2);
+  if (module_group.empty())
+    return OkStatus();
+
+  assert(module_group.size() == 2);
 
   GradAccCommDelay pass;
-  TF_RETURN_IF_ERROR(pass.Run(hlo_modules[0], hlo_modules[1]).status());
+  TF_RETURN_IF_ERROR(pass.RunOnModuleGroup(module_group, {}).status());
 
   return OkStatus();
 }

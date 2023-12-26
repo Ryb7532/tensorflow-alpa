@@ -157,10 +157,17 @@ std::string GetGradSyncChannelIds(const HloModule* module) {
 }
 
 /***** Added by Ryb7532 *****/
-StatusOr<bool> GradAccCommDelay::Run(HloModule* backward_hlo, HloModule* applygrad_hlo) {
+StatusOr<bool> GradAccCommDelay::RunOnModuleGroup(
+    HloModuleGroup* module_group,
+    const absl::flat_hash_set<absl::string_view>& execution_threads) {
   if (!pass_context::GetBool("auto_sharding::rewrite_for_grad_acc", false)) {
     return false;
   }
+
+  assert(module_group.size() == 2);
+
+  HloModule* backward_hlo = module_group.modules[0];
+  HloModule* applygrad_hlo = module_group.modules[1];
 
   // for debug
   std::cerr << "===== Enter GradAccRewrite =====" << std::endl;
