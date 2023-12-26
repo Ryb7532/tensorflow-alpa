@@ -166,8 +166,8 @@ StatusOr<bool> GradAccCommDelay::RunOnModuleGroup(
 
   assert(module_group.size() == 2);
 
-  HloModule* backward_hlo = module_group.modules[0];
-  HloModule* applygrad_hlo = module_group.modules[1];
+  HloModule* backward_hlo = module_group->modules[0];
+  HloModule* applygrad_hlo = module_group->modules[1];
 
   // for debug
   std::cerr << "===== Enter GradAccRewrite =====" << std::endl;
