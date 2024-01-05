@@ -891,7 +891,7 @@ void BuildXlaCompilerSubmodule(py::module& m) {
   /***** Added by RHosoki *****/
   m.def(
       "run_comm_delay_spmd_partitioner",
-      [](std::vector<HloModule*> hlo_modules, const CompileOptions& options) {
+      [](std::vector<HloModule*>& hlo_modules, const CompileOptions& options) {
         py::gil_scoped_release gil_release;
         TF_RETURN_IF_ERROR(spmd::RunCommDelaySpmdPartitionerPass(hlo_modules, options));
         return Status::OK();
