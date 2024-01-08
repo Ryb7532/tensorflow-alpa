@@ -251,27 +251,37 @@ StatusOr<bool> GradAccCommDelay::RunOnModuleGroup(
 
       HloInstruction* param_ins = applygrad_entry->parameter_instruction(in_index);
 
-      assert(ShapeUtil::SameElementType(add_ins->shape(), param_ins->shape()));
-      auto old_allreduce = Cast<HloAllReduceInstruction>(allreduce_ins);
-      const Shape& new_shape = old_allreduce->shape();
-      HloInstruction::InstructionVector new_operands;
-      new_operands.push_back(param_ins);
-      auto new_allreduce =
-          applygrad_entry->AddInstruction(HloInstruction::CreateAllReduce(
-              new_shape,
-              MaybeReshapeConvertTuple(new_operands, new_shape),
-              MakeBinaryAdd(new_shape.element_type(), applygrad_entry->parent()),
-              old_allreduce->replica_groups(),
-              old_allreduce->constrain_layout(), old_allreduce->channel_id(),
-              old_allreduce->use_global_device_ids()));
-      new_allreduce->set_metadata(old_allreduce->metadata());
-      param_ins->ReplaceAllUsesWith(
-          MaybeReshapeConvert(new_allreduce, param_ins->shape()));
+      {
+        auto param_users = param_ins->users();
 
-      // TODO: uncomment out (left for debug)
-      // to_remove_in_backward.push_back(old_allreduce);
-      allreduce_ins = new_allreduce;
-      /*
+        assert(ShapeUtil::SameElementType(add_ins->shape(), param_ins->shape()));
+        auto old_allreduce = Cast<HloAllReduceInstruction>(allreduce_ins);
+        const Shape& new_shape = old_allreduce->shape();
+        HloInstruction::InstructionVector new_operands();
+        new_operands.push_back(param_ins);
+        auto new_allreduce =
+            applygrad_entry->AddInstruction(HloInstruction::CreateAllReduce(
+                new_shape,
+                MaybeReshapeConvertTuple(new_operands, new_shape),
+                MakeBinaryAdd(new_shape.element_type(), applygrad_entry->parent()),
+                old_allreduce->replica_groups(),
+                old_allreduce->constrain_layout(), old_allreduce->channel_id(),
+                old_allreduce->use_global_device_ids()));
+        new_allreduce->set_metadata(old_allreduce->metadata());
+        for (HloInstruction* user: param_users) {
+          for (size_t i = 0; i < user->operand_count(); ++i) {
+            if (user->operand(i) == param_ins) {
+              user->ReplaceOperandWith(
+                  i, MaybeReshapeConvert(new_allreduce,
+                                        user->operand(i)->shape()));
+            }
+          }
+        }
+        // TODO: uncomment out (left for debug)
+        // to_remove_in_backward.push_back(old_allreduce);
+        allreduce_ins = new_allreduce;
+      }
+
       if (!ShapeUtil::SameElementType(allreduce_ins->shape(), param_ins->shape())) {
         // Fix type mismatch
         auto old_allreduce = Cast<HloAllReduceInstruction>(allreduce_ins);
@@ -289,7 +299,6 @@ StatusOr<bool> GradAccCommDelay::RunOnModuleGroup(
             MaybeReshapeConvert(new_allreduce, old_allreduce->shape()));
         to_remove_in_applygrad.push_back(old_allreduce);
       }
-      */
     }
   }
 
