@@ -314,6 +314,8 @@ Status RunCommDelaySpmdPartitionerPass(std::vector<HloModule*>& hlo_modules,
       }
       TF_RETURN_IF_ERROR(spmd_pipeline.Run(hlo_module).status());
       module_group.push_back(std::unique_ptr<HloModule>(hlo_module));
+      // For debug
+      assert(hlo_module->has_spmd_parameters_shardings());
     }
   }
 
@@ -322,11 +324,19 @@ Status RunCommDelaySpmdPartitionerPass(std::vector<HloModule*>& hlo_modules,
 
   assert(module_group.size() == 2);
 
+  // For debug
+  assert(module_group.modules()[0]->has_spmd_parameters_shardings());
+  assert(module_group.modules()[1]->has_spmd_parameters_shardings());
+
   if (hlo_modules[0]->config().use_spmd_partitioning() && hlo_modules[0]->config().num_partitions() > 1) {
     HloPassPipeline comm_delay_pipeline("run-comm-delay");
     comm_delay_pipeline.AddPass<GradAccCommDelay>();
-    TF_RETURN_IF_ERROR(comm_delay_pipeline.RunOnModuleGroup(module_group).status())
+    TF_RETURN_IF_ERROR(comm_delay_pipeline.RunOnModuleGroup(&module_group).status());
   }
+
+  // For debug
+  // assert(module_group.modules()[0]->has_spmd_parameters_shardings());
+  // assert(module_group.modules()[1]->has_spmd_parameters_shardings());
 
   return OkStatus();
 }

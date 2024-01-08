@@ -271,7 +271,7 @@ StatusOr<bool> GradAccCommDelay::RunOnModuleGroup(
       // TODO: uncomment out (left for debug)
       // to_remove_in_backward.push_back(old_allreduce);
       allreduce_ins = new_allreduce;
-
+      /*
       if (!ShapeUtil::SameElementType(allreduce_ins->shape(), param_ins->shape())) {
         // Fix type mismatch
         auto old_allreduce = Cast<HloAllReduceInstruction>(allreduce_ins);
@@ -289,6 +289,7 @@ StatusOr<bool> GradAccCommDelay::RunOnModuleGroup(
             MaybeReshapeConvert(new_allreduce, old_allreduce->shape()));
         to_remove_in_applygrad.push_back(old_allreduce);
       }
+      */
     }
   }
 
