@@ -24,7 +24,7 @@ Status SetHloModuleInputShardings(HloModule* hlo_module,
                                   const std::vector<OpSharding>& op_shardings);
 
 // Run the SPMD partitioner pass with optimization of delaying grad_acc comm.
-Status RunCommDelaySpmdPartitionerPass(std::vector<HloModule*>& hlo_modules,
+Status RunCommDelaySpmdPartitionerPass(HloModule* backward_hlo, HloModule* applygrad_hlo,
                                        const CompileOptions& options);
 
 };  // namespace spmd

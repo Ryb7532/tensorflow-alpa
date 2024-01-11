@@ -284,59 +284,66 @@ Status SetHloModuleInputShardings(HloModule* module,
 }
 
 /***** Delay communication for acc grad from backward computation to apply_grad (Added by Ryb7532) *****/
-Status RunCommDelaySpmdPartitionerPass(std::vector<HloModule*>& hlo_modules,
+  Status RunCommDelaySpmdPartitionerPass(HloModule* backward_hlo, HloModule* applygrad_hlo,
                                        const CompileOptions& options) {
   HloModuleGroup module_group("");
+  std::cerr << "checkpoint: 0" << std::endl;
+  std::cerr << backward_hlo << std::endl;
+  std::cerr << applygrad_hlo << std::endl;
+  module_group.push_back(std::unique_ptr<HloModule>(backward_hlo));
+  module_group.push_back(std::unique_ptr<HloModule>(applygrad_hlo));
 
-  for (HloModule* hlo_module : hlo_modules) {
+  for (HloModule* hlo_module : module_group.modules()) {
     TF_ASSIGN_OR_RETURN(auto module_config,
                         CreateHloModuleConfig(hlo_module, options));
     hlo_module->set_config(module_config);
 
     DumpHloModuleIfEnabled(*hlo_module, kBeforeSpmdPartitionDumpName);
+  }
 
-    // TODO(yonghao): TF Profiler Traceme
-    if (hlo_module->config().use_spmd_partitioning()) {
-      HloPassPipeline spmd_pipeline("run-spmd-partitioner");
-      const int64_t num_partitions = hlo_module->config().num_partitions();
-      if (num_partitions > 1) {
-        spmd_pipeline.AddPass<ShardingPropagation>(
-            /*is_spmd=*/true, /*propagate_metadata=*/false,
-            /*allow_spmd_sharding_propagation_to_output=*/true);
-        spmd_pipeline.AddPass<StatefulRngSpmdPartitioner>(
-            num_partitions, hlo_module->config().replica_count());
-        spmd_pipeline.AddPass<RedundantSliceEliminator>();
-        spmd_pipeline.AddPass<AllReduceReassociate>();
-      } else {
-        // Remove redundant sharding ops when partition_count == 1.
-        spmd_pipeline.AddPass<ShardingRemover>();
-        spmd_pipeline.AddPass<HloDCE>();
-      }
-      TF_RETURN_IF_ERROR(spmd_pipeline.Run(hlo_module).status());
-      module_group.push_back(std::unique_ptr<HloModule>(hlo_module));
-      // For debug
-      assert(hlo_module->has_spmd_parameters_shardings());
+  std::cerr << "checkpoint: 1" << std::endl;
+  std::cerr << backward_hlo << ", " << module_group.modules()[0] << std::endl;
+  std::cerr << applygrad_hlo << ", " << module_group.modules()[1] << std::endl;
+
+  // TODO(yonghao): TF Profiler Traceme
+  if (backward_hlo->config().use_spmd_partitioning()) {
+    HloPassPipeline spmd_pipeline("run-spmd-partitioner");
+    const int64_t num_partitions = backward_hlo->config().num_partitions();
+    if (num_partitions > 1) {
+      spmd_pipeline.AddPass<ShardingPropagation>(
+						 /*is_spmd=*/true, /*propagate_metadata=*/false,
+						 /*allow_spmd_sharding_propagation_to_output=*/true);
+      spmd_pipeline.AddPass<StatefulRngSpmdPartitioner>(
+							num_partitions, hlo_module->config().replica_count());
+      spmd_pipeline.AddPass<RedundantSliceEliminator>();
+      spmd_pipeline.AddPass<AllReduceReassociate>();
+      spmd_pipeline.AddPass<GradAccCommDelay>();
+    } else {
+      // Remove redundant sharding ops when partition_count == 1.
+      spmd_pipeline.AddPass<ShardingRemover>();
+      spmd_pipeline.AddPass<HloDCE>();
     }
+    TF_RETURN_IF_ERROR(spmd_pipeline.RunOnModuleGroup(&module_group).status());
+    // For debug
+    assert(hlo_module->has_spmd_parameters_shardings());
   }
 
-  if (module_group.empty())
-    return OkStatus();
-
-  assert(module_group.size() == 2);
-
-  // For debug
-  assert(module_group.modules()[0]->has_spmd_parameters_shardings());
-  assert(module_group.modules()[1]->has_spmd_parameters_shardings());
-
-  if (hlo_modules[0]->config().use_spmd_partitioning() && hlo_modules[0]->config().num_partitions() > 1) {
-    HloPassPipeline comm_delay_pipeline("run-comm-delay");
-    comm_delay_pipeline.AddPass<GradAccCommDelay>();
-    TF_RETURN_IF_ERROR(comm_delay_pipeline.RunOnModuleGroup(&module_group).status());
-  }
+  std::cerr << "checkpoint: 2" << std::endl;
+  std::cerr << backward_hlo << ", " << module_group.modules()[0] << std::endl;
+  std::cerr << applygrad_hlo << ", " << module_group.modules()[1] << std::endl;
 
   // For debug
-  // assert(module_group.modules()[0]->has_spmd_parameters_shardings());
-  // assert(module_group.modules()[1]->has_spmd_parameters_shardings());
+  std::cerr << "check backward spmd_parameters_shardings" << std::endl;
+  if (!module_group.modules()[0]->has_spmd_parameters_shardings())
+    std::cerr << "module_group.modules()[0] don't have spmd_parameters_shradings." << std::endl;
+  if (!backward_hlo->has_spmd_parameters_shardings())
+    std::cerr << "backward_hlo don't have spmd_parameters_shradings." << std::endl;
+  std::cerr << "check applygrad spmd_parameters_shardings" << std::endl;
+  if (!module_group.modules()[1]->has_spmd_parameters_shardings())
+    std::cerr << "module_group.modules()[1] don't have spmd_parameters_shradings." << std::endl;
+  if (!applygrad_hlo->has_spmd_parameters_shardings())
+    std::cerr << "applygrad_hlo don't have spmd_parameters_shradings." << std::endl;
+    
 
   return OkStatus();
 }

@@ -184,6 +184,10 @@ StatusOr<bool> GradAccCommDelay::RunOnModuleGroup(
   HloInstruction* output_tuple = backward_entry->root_instruction();
   HloComputation* applygrad_entry = applygrad_hlo->entry_computation();
 
+  // For debug
+  assert(backward_hlo->has_spmd_parameters_shardings());
+  assert(applygrad_hlo->has_spmd_parameters_shardings());
+
   std::vector<HloInstruction*> to_remove_in_backward, to_remove_in_applygrad;
 
   CHECK_EQ(output_indices.size(), input_indices.size());
@@ -257,7 +261,7 @@ StatusOr<bool> GradAccCommDelay::RunOnModuleGroup(
         assert(ShapeUtil::SameElementType(add_ins->shape(), param_ins->shape()));
         auto old_allreduce = Cast<HloAllReduceInstruction>(allreduce_ins);
         const Shape& new_shape = old_allreduce->shape();
-        HloInstruction::InstructionVector new_operands();
+        HloInstruction::InstructionVector new_operands;
         new_operands.push_back(param_ins);
         auto new_allreduce =
             applygrad_entry->AddInstruction(HloInstruction::CreateAllReduce(
@@ -301,6 +305,10 @@ StatusOr<bool> GradAccCommDelay::RunOnModuleGroup(
       }
     }
   }
+
+  // For debug
+  assert(backward_hlo->has_spmd_parameters_shardings());
+  assert(applygrad_hlo->has_spmd_parameters_shardings());
 
   for (auto ins : to_remove_in_backward) {
     backward_entry->RemoveInstruction(ins);
