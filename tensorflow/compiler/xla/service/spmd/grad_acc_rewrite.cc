@@ -170,12 +170,12 @@ StatusOr<bool> GradAccCommDelay::RunOnModuleGroup(
   HloModule* applygrad_hlo = module_group->modules()[1];
 
   // for debug
-  std::cerr << "===== Enter GradAccRewrite =====" << std::endl;
-  std::cerr << "Backward:" << std::endl;
-  std::cerr << backward_hlo->ToString();
-  std::cerr << "Apply_grad:" << std::endl;
-  std::cerr << applygrad_hlo->ToString();
-  std::cerr << "=====================================" << std::endl;
+  // std::cerr << "===== Enter GradAccRewrite =====" << std::endl;
+  // std::cerr << "Backward:" << std::endl;
+  // std::cerr << backward_hlo->ToString();
+  // std::cerr << "Apply_grad:" << std::endl;
+  // std::cerr << applygrad_hlo->ToString();
+  // std::cerr << "=====================================" << std::endl;
 
   auto output_indices = pass_context::GetIntVector("auto_sharding::rewrite_indices");
   auto input_indices = pass_context::GetIntVector("auto_sharding::rewrite_applygrad_indices");
@@ -183,10 +183,6 @@ StatusOr<bool> GradAccCommDelay::RunOnModuleGroup(
   HloComputation* backward_entry = backward_hlo->entry_computation();
   HloInstruction* output_tuple = backward_entry->root_instruction();
   HloComputation* applygrad_entry = applygrad_hlo->entry_computation();
-
-  // For debug
-  assert(backward_hlo->has_spmd_parameters_shardings());
-  assert(applygrad_hlo->has_spmd_parameters_shardings());
 
   std::vector<HloInstruction*> to_remove_in_backward, to_remove_in_applygrad;
 
@@ -220,7 +216,6 @@ StatusOr<bool> GradAccCommDelay::RunOnModuleGroup(
 
     if (in_index == -1) {
       // insert allreduce_ins between add_ins and output
-      // allreduce_ins->ReplaceOperandWith(0, add_ins);
       allreduce_ins->ReplaceOperandWith(
           0, MaybeReshapeConvert(add_ins, allreduce_ins->shape()));
       output_tuple->ReplaceOperandWith(
@@ -245,13 +240,9 @@ StatusOr<bool> GradAccCommDelay::RunOnModuleGroup(
         to_remove_in_backward.push_back(old_allreduce);
       }
     } else {
-      // TODO: remove these lines (left for debug)
-      // allreduce_ins->ReplaceOperandWith(0, add_ins);
       allreduce_ins->ReplaceOperandWith(
           0, MaybeReshapeConvert(add_ins, allreduce_ins->shape()));
-      // output_tuple->ReplaceOperandWith(
-      //     out_index, MaybeReshapeConvert(allreduce_ins, add_ins->shape()));
-      allreduce_ins->set_metadata_op_name(kAllReduceToBeRemoved);
+      allreduce_ins->set_metadata_op_name(kDelayedAllReduce);
 
       HloInstruction* param_ins = applygrad_entry->parameter_instruction(in_index);
 
@@ -281,8 +272,7 @@ StatusOr<bool> GradAccCommDelay::RunOnModuleGroup(
             }
           }
         }
-        // TODO: uncomment out (left for debug)
-        // to_remove_in_backward.push_back(old_allreduce);
+        to_remove_in_backward.push_back(old_allreduce);
         allreduce_ins = new_allreduce;
       }
 
@@ -306,10 +296,6 @@ StatusOr<bool> GradAccCommDelay::RunOnModuleGroup(
     }
   }
 
-  // For debug
-  assert(backward_hlo->has_spmd_parameters_shardings());
-  assert(applygrad_hlo->has_spmd_parameters_shardings());
-
   for (auto ins : to_remove_in_backward) {
     backward_entry->RemoveInstruction(ins);
   }
@@ -319,12 +305,12 @@ StatusOr<bool> GradAccCommDelay::RunOnModuleGroup(
   }
 
   // for debug
-  std::cerr << "===== Exit GradAccRewrite =====" << std::endl;
-  std::cerr << "Backward:" << std::endl;
-  std::cerr << backward_hlo->ToString();
-  std::cerr << "Apply_grad:" << std::endl;
-  std::cerr << applygrad_hlo->ToString();
-  std::cerr << "=====================================" << std::endl;
+  // std::cerr << "===== Exit GradAccRewrite =====" << std::endl;
+  // std::cerr << "Backward:" << std::endl;
+  // std::cerr << backward_hlo->ToString();
+  // std::cerr << "Apply_grad:" << std::endl;
+  // std::cerr << applygrad_hlo->ToString();
+  // std::cerr << "=====================================" << std::endl;
 
   return true;
 }

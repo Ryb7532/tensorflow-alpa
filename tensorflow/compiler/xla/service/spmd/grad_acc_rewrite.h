@@ -51,7 +51,7 @@ class GradAccCommDelay : public HloModuleGroupPass {
     override;
 };
 
-const char* const kAllReduceToBeRemoved = "all_reduce_to_be_removed";
+const char* const kDelayedAllReduce = "grad_acc_delayed_all_reduce";
 
 }  // namespace spmd
 }  // namespace xla

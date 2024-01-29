@@ -287,9 +287,6 @@ Status SetHloModuleInputShardings(HloModule* module,
   Status RunCommDelaySpmdPartitionerPass(HloModule* backward_hlo, HloModule* applygrad_hlo,
                                        const CompileOptions& options) {
   HloModuleGroup module_group("");
-  std::cerr << "checkpoint: 0" << std::endl;
-  std::cerr << backward_hlo << std::endl;
-  std::cerr << applygrad_hlo << std::endl;
   module_group.push_back(std::unique_ptr<HloModule>(backward_hlo));
   module_group.push_back(std::unique_ptr<HloModule>(applygrad_hlo));
 
@@ -301,10 +298,6 @@ Status SetHloModuleInputShardings(HloModule* module,
     DumpHloModuleIfEnabled(*hlo_module, kBeforeSpmdPartitionDumpName);
   }
 
-  std::cerr << "checkpoint: 1" << std::endl;
-  std::cerr << backward_hlo << ", " << module_group.modules()[0] << std::endl;
-  std::cerr << applygrad_hlo << ", " << module_group.modules()[1] << std::endl;
-
   // TODO(yonghao): TF Profiler Traceme
   if (backward_hlo->config().use_spmd_partitioning()) {
     HloPassPipeline spmd_pipeline("run-spmd-partitioner");
@@ -314,7 +307,7 @@ Status SetHloModuleInputShardings(HloModule* module,
 						 /*is_spmd=*/true, /*propagate_metadata=*/false,
 						 /*allow_spmd_sharding_propagation_to_output=*/true);
       spmd_pipeline.AddPass<StatefulRngSpmdPartitioner>(
-							num_partitions, hlo_module->config().replica_count());
+							num_partitions, backward_hlo->config().replica_count());
       spmd_pipeline.AddPass<RedundantSliceEliminator>();
       spmd_pipeline.AddPass<AllReduceReassociate>();
       spmd_pipeline.AddPass<GradAccCommDelay>();
@@ -324,26 +317,11 @@ Status SetHloModuleInputShardings(HloModule* module,
       spmd_pipeline.AddPass<HloDCE>();
     }
     TF_RETURN_IF_ERROR(spmd_pipeline.RunOnModuleGroup(&module_group).status());
-    // For debug
-    assert(hlo_module->has_spmd_parameters_shardings());
   }
 
-  std::cerr << "checkpoint: 2" << std::endl;
-  std::cerr << backward_hlo << ", " << module_group.modules()[0] << std::endl;
-  std::cerr << applygrad_hlo << ", " << module_group.modules()[1] << std::endl;
-
-  // For debug
-  std::cerr << "check backward spmd_parameters_shardings" << std::endl;
-  if (!module_group.modules()[0]->has_spmd_parameters_shardings())
-    std::cerr << "module_group.modules()[0] don't have spmd_parameters_shradings." << std::endl;
-  if (!backward_hlo->has_spmd_parameters_shardings())
-    std::cerr << "backward_hlo don't have spmd_parameters_shradings." << std::endl;
-  std::cerr << "check applygrad spmd_parameters_shardings" << std::endl;
-  if (!module_group.modules()[1]->has_spmd_parameters_shardings())
-    std::cerr << "module_group.modules()[1] don't have spmd_parameters_shradings." << std::endl;
-  if (!applygrad_hlo->has_spmd_parameters_shardings())
-    std::cerr << "applygrad_hlo don't have spmd_parameters_shradings." << std::endl;
-    
+  for (std::unique_ptr<HloModule>& hlo_module: module_group.ConsumeModules()) {
+    hlo_module.release();
+  }
 
   return OkStatus();
 }
