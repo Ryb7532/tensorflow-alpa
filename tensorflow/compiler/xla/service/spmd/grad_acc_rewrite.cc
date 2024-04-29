@@ -7,6 +7,8 @@
 #include "tensorflow/compiler/xla/service/pass_context.h"
 #include "tensorflow/compiler/xla/service/spmd/spmd_partitioner_util.h"
 
+#include "tensorflow/compiler/xla/service/hlo_query.h"
+
 namespace xla {
 namespace spmd {
 
@@ -184,7 +186,9 @@ StatusOr<bool> GradAccCommDelay::RunOnModuleGroup(
   HloInstruction* output_tuple = backward_entry->root_instruction();
   HloComputation* applygrad_entry = applygrad_hlo->entry_computation();
 
-  std::vector<HloInstruction*> to_remove_in_backward, to_remove_in_applygrad;
+  int64_t next_channel_id = hlo_query::NextChannelId(*applygrad_hlo);
+
+  std::vector<HloInstruction*> to_remove;
 
   CHECK_EQ(output_indices.size(), input_indices.size());
 
@@ -237,71 +241,47 @@ StatusOr<bool> GradAccCommDelay::RunOnModuleGroup(
         new_allreduce->set_metadata(old_allreduce->metadata());
         old_allreduce->ReplaceAllUsesWith(
             MaybeReshapeConvert(new_allreduce, old_allreduce->shape()));
-        to_remove_in_backward.push_back(old_allreduce);
+        to_remove.push_back(old_allreduce);
       }
     } else {
-      allreduce_ins->ReplaceOperandWith(
-          0, MaybeReshapeConvert(add_ins, allreduce_ins->shape()));
       allreduce_ins->set_metadata_op_name(kDelayedAllReduce);
 
       HloInstruction* param_ins = applygrad_entry->parameter_instruction(in_index);
 
-      {
-        auto param_users = param_ins->users();
+      auto param_users = param_ins->users();
 
-        assert(ShapeUtil::SameElementType(add_ins->shape(), param_ins->shape()));
-        auto old_allreduce = Cast<HloAllReduceInstruction>(allreduce_ins);
-        const Shape& new_shape = old_allreduce->shape();
-        HloInstruction::InstructionVector new_operands;
-        new_operands.push_back(param_ins);
-        auto new_allreduce =
-            applygrad_entry->AddInstruction(HloInstruction::CreateAllReduce(
-                new_shape,
-                MaybeReshapeConvertTuple(new_operands, new_shape),
-                MakeBinaryAdd(new_shape.element_type(), applygrad_entry->parent()),
-                old_allreduce->replica_groups(),
-                old_allreduce->constrain_layout(), old_allreduce->channel_id(),
-                old_allreduce->use_global_device_ids()));
-        new_allreduce->set_metadata(old_allreduce->metadata());
-        for (HloInstruction* user: param_users) {
-          for (size_t i = 0; i < user->operand_count(); ++i) {
-            if (user->operand(i) == param_ins) {
-              user->ReplaceOperandWith(
-                  i, MaybeReshapeConvert(new_allreduce,
-                                        user->operand(i)->shape()));
-            }
-          }
-        }
-        to_remove_in_backward.push_back(old_allreduce);
-        allreduce_ins = new_allreduce;
+      assert(ShapeUtil::SameElementType(add_ins->shape(), param_ins->shape()));
+      auto old_allreduce = Cast<HloAllReduceInstruction>(allreduce_ins);
+      const Shape& new_shape = param_ins->shape();
+      HloInstruction::InstructionVector new_operands;
+      new_operands.push_back(param_ins);
+      std::optional<int64_t> channel_id = old_allreduce->channel_id();
+      if (channel_id)
+        channel_id = next_channel_id++;
+      auto new_allreduce =
+	applygrad_entry->AddInstruction(HloInstruction::CreateAllReduce(
+	    new_shape,
+	    MaybeReshapeConvertTuple(new_operands, new_shape),
+	    MakeBinaryAdd(new_shape.element_type(), applygrad_entry->parent()),
+	    old_allreduce->replica_groups(),
+	    old_allreduce->constrain_layout(), channel_id,
+	    old_allreduce->use_global_device_ids()));
+      new_allreduce->set_metadata(old_allreduce->metadata());
+      for (HloInstruction* param_user: param_users) {
+	for (size_t i = 0; i < param_user->operand_count(); ++i) {
+	  if (param_user->operand(i) == param_ins) {
+	    param_user->ReplaceOperandWith(
+              i, MaybeReshapeConvert(new_allreduce,
+				     param_ins->shape()));
+	  }
+	}
       }
-
-      if (!ShapeUtil::SameElementType(allreduce_ins->shape(), param_ins->shape())) {
-        // Fix type mismatch
-        auto old_allreduce = Cast<HloAllReduceInstruction>(allreduce_ins);
-        const Shape& new_shape = param_ins->shape();
-        auto new_allreduce =
-            applygrad_entry->AddInstruction(HloInstruction::CreateAllReduce(
-                new_shape,
-                MaybeReshapeConvertTuple(old_allreduce->operands(), new_shape),
-                MakeBinaryAdd(new_shape.element_type(), applygrad_entry->parent()),
-                old_allreduce->replica_groups(),
-                old_allreduce->constrain_layout(), old_allreduce->channel_id(),
-                old_allreduce->use_global_device_ids()));
-        new_allreduce->set_metadata(old_allreduce->metadata());
-        old_allreduce->ReplaceAllUsesWith(
-            MaybeReshapeConvert(new_allreduce, old_allreduce->shape()));
-        to_remove_in_applygrad.push_back(old_allreduce);
-      }
+      to_remove.push_back(old_allreduce);
     }
   }
 
-  for (auto ins : to_remove_in_backward) {
+  for (auto ins : to_remove) {
     backward_entry->RemoveInstruction(ins);
-  }
-
-  for (auto ins : to_remove_in_applygrad) {
-    applygrad_entry->RemoveInstruction(ins);
   }
 
   // for debug
