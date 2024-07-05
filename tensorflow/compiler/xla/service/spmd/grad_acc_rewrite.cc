@@ -6,7 +6,6 @@
 #include "tensorflow/compiler/xla/service/hlo_opcode.h"
 #include "tensorflow/compiler/xla/service/pass_context.h"
 #include "tensorflow/compiler/xla/service/spmd/spmd_partitioner_util.h"
-
 #include "tensorflow/compiler/xla/service/hlo_query.h"
 
 namespace xla {
@@ -255,26 +254,25 @@ StatusOr<bool> GradAccCommDelay::RunOnModuleGroup(
       const Shape& new_shape = param_ins->shape();
       HloInstruction::InstructionVector new_operands;
       new_operands.push_back(param_ins);
-      std::optional<int64_t> channel_id = old_allreduce->channel_id();
-      if (channel_id)
+      std::optional<int64_t> channel_id;
+      if (old_allreduce->channel_id())
         channel_id = next_channel_id++;
       auto new_allreduce =
-	applygrad_entry->AddInstruction(HloInstruction::CreateAllReduce(
-	    new_shape,
-	    MaybeReshapeConvertTuple(new_operands, new_shape),
-	    MakeBinaryAdd(new_shape.element_type(), applygrad_entry->parent()),
-	    old_allreduce->replica_groups(),
-	    old_allreduce->constrain_layout(), channel_id,
-	    old_allreduce->use_global_device_ids()));
+        applygrad_entry->AddInstruction(HloInstruction::CreateAllReduce(
+          new_shape,
+          MaybeReshapeConvertTuple(new_operands, new_shape),
+          MakeBinaryAdd(new_shape.element_type(), applygrad_entry->parent()),
+          old_allreduce->replica_groups(),
+          old_allreduce->constrain_layout(), channel_id,
+          old_allreduce->use_global_device_ids()));
       new_allreduce->set_metadata(old_allreduce->metadata());
       for (HloInstruction* param_user: param_users) {
-	for (size_t i = 0; i < param_user->operand_count(); ++i) {
-	  if (param_user->operand(i) == param_ins) {
-	    param_user->ReplaceOperandWith(
-              i, MaybeReshapeConvert(new_allreduce,
-				     param_ins->shape()));
-	  }
-	}
+        for (size_t i = 0; i < param_user->operand_count(); ++i) {
+          if (param_user->operand(i) == param_ins) {
+            param_user->ReplaceOperandWith(i, MaybeReshapeConvert(
+	      new_allreduce, param_ins->shape()));
+          }
+        }
       }
       to_remove.push_back(old_allreduce);
     }
