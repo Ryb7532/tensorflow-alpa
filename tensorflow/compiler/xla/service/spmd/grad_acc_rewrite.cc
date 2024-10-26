@@ -265,12 +265,13 @@ StatusOr<bool> GradAccCommDelay::RunOnModuleGroup(
           old_allreduce->replica_groups(),
           old_allreduce->constrain_layout(), channel_id,
           old_allreduce->use_global_device_ids()));
-      new_allreduce->set_metadata(old_allreduce->metadata());
+          new_allreduce->set_metadata(old_allreduce->metadata());
       for (HloInstruction* param_user: param_users) {
         for (size_t i = 0; i < param_user->operand_count(); ++i) {
           if (param_user->operand(i) == param_ins) {
-            param_user->ReplaceOperandWith(i, MaybeReshapeConvert(
-	      new_allreduce, param_ins->shape()));
+            param_user->ReplaceOperandWith(
+                    i, MaybeReshapeConvert(new_allreduce,
+                  param_ins->shape()));
           }
         }
       }
